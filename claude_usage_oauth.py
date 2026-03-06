@@ -121,12 +121,15 @@ def fetch_usage_data(access_token: str) -> Optional[dict]:
         return None
 
 
-def get_cached_usage() -> Optional[dict]:
+def get_cached_usage(allow_stale: bool = False) -> Optional[dict]:
     """
     Load cached usage data if fresh (< CACHE_TTL_SECONDS old).
 
+    Args:
+        allow_stale: If True, return data even if TTL has expired
+
     Returns:
-        Cached usage data, or None if stale/missing
+        Cached usage data, or None if missing/unparseable
     """
     try:
         if not CACHE_FILE.exists():
@@ -135,12 +138,12 @@ def get_cached_usage() -> Optional[dict]:
         with open(CACHE_FILE, 'r') as f:
             cache = json.load(f)
 
-        # Check freshness
-        cached_time = cache.get("timestamp", 0)
-        age = time.time() - cached_time
-
-        if age > CACHE_TTL_SECONDS:
-            return None
+        # Check freshness (unless stale data is acceptable)
+        if not allow_stale:
+            cached_time = cache.get("timestamp", 0)
+            age = time.time() - cached_time
+            if age > CACHE_TTL_SECONDS:
+                return None
 
         return cache.get("data")
 
@@ -215,10 +218,13 @@ def main():
 
             usage_data = fetch_usage_data(access_token)
             if usage_data is None:
-                sys.exit(1)
-
-            # Cache the result
-            save_to_cache(usage_data)
+                # API failed — fall back to stale cache rather than failing completely
+                usage_data = get_cached_usage(allow_stale=True)
+                if usage_data is None:
+                    sys.exit(1)
+            else:
+                # Cache the fresh result
+                save_to_cache(usage_data)
 
         # Parse data
         five_hour = usage_data["five_hour"]
