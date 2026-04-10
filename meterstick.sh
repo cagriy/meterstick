@@ -57,7 +57,7 @@ format_percentage() {
         pct_int=0
     fi
 
-    if [ "$pct_int" -ge 80 ]; then
+    if [ "$pct_int" -ge 75 ]; then
         printf "${C_RED}%d%%${C_RESET}" "$pct_int"
     elif [ "$pct_int" -ge 50 ]; then
         printf "${C_YELLOW}%d%%${C_RESET}" "$pct_int"
