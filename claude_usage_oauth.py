@@ -18,6 +18,7 @@ Usage:
     On failure: exit 1 (no output)
 """
 
+import hashlib
 import json
 import os
 import subprocess
@@ -28,50 +29,44 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-# Constants
-KEYCHAIN_SERVICE = "Claude Code-credentials"
 OAUTH_API_URL = "https://api.anthropic.com/api/oauth/usage"
-CACHE_FILE = Path("/tmp/claude-oauth-usage-cache.json")
-CACHE_TTL_SECONDS = 30  # Cache results for 30 seconds
+CACHE_TTL_SECONDS = 30
 API_TIMEOUT_SECONDS = 2
 
 
-def get_oauth_token() -> Optional[str]:
-    """
-    Extract OAuth access token from macOS Keychain.
+def keychain_service_for(config_dir: str) -> list[str]:
+    """Return keychain service name candidates for a config dir, most specific first."""
+    suffix = hashlib.sha256(config_dir.encode()).hexdigest()[:8]
+    return [f"Claude Code-credentials-{suffix}", "Claude Code-credentials"]
 
-    Returns:
-        Access token string, or None if not found/error
-    """
-    try:
-        # Query keychain for Claude Code credentials
-        result = subprocess.run(
-            ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
-            capture_output=True,
-            text=True,
-            timeout=2
-        )
 
-        if result.returncode != 0:
-            return None
+def cache_file_for(config_dir: str) -> Path:
+    suffix = hashlib.sha256(config_dir.encode()).hexdigest()[:8]
+    return Path(f"/tmp/claude-oauth-usage-cache-{suffix}.json")
 
-        # Parse JSON credential structure
-        credentials_json = result.stdout.strip()
-        credentials = json.loads(credentials_json)
 
-        # Navigate to access token: {"claudeAiOauth": {"accessToken": "sk-ant-oat01-..."}}
-        oauth_data = credentials.get("claudeAiOauth", {})
-        access_token = oauth_data.get("accessToken")
+def get_oauth_token(service_candidates: list[str]) -> Optional[str]:
+    """Extract OAuth access token from macOS Keychain, trying each candidate service name."""
+    for service in service_candidates:
+        try:
+            result = subprocess.run(
+                ["security", "find-generic-password", "-s", service, "-w"],
+                capture_output=True, text=True, timeout=2
+            )
+            if result.returncode != 0:
+                continue
 
-        if not access_token or not access_token.startswith("sk-ant-oat01-"):
-            return None
+            credentials = json.loads(result.stdout.strip())
+            oauth_data = credentials.get("claudeAiOauth", {})
+            access_token = oauth_data.get("accessToken")
 
-        return access_token
+            if access_token and access_token.startswith("sk-ant-oat01-"):
+                return access_token
 
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, json.JSONDecodeError, KeyError):
-        return None
-    except Exception:
-        return None
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, KeyError, Exception):
+            continue
+
+    return None
 
 
 def fetch_usage_data(access_token: str) -> Optional[dict]:
@@ -121,28 +116,16 @@ def fetch_usage_data(access_token: str) -> Optional[dict]:
         return None
 
 
-def get_cached_usage(allow_stale: bool = False) -> Optional[dict]:
-    """
-    Load cached usage data if fresh (< CACHE_TTL_SECONDS old).
-
-    Args:
-        allow_stale: If True, return data even if TTL has expired
-
-    Returns:
-        Cached usage data, or None if missing/unparseable
-    """
+def get_cached_usage(cache_file: Path, allow_stale: bool = False) -> Optional[dict]:
     try:
-        if not CACHE_FILE.exists():
+        if not cache_file.exists():
             return None
 
-        with open(CACHE_FILE, 'r') as f:
+        with open(cache_file, 'r') as f:
             cache = json.load(f)
 
-        # Check freshness (unless stale data is acceptable)
         if not allow_stale:
-            cached_time = cache.get("timestamp", 0)
-            age = time.time() - cached_time
-            if age > CACHE_TTL_SECONDS:
+            if time.time() - cache.get("timestamp", 0) > CACHE_TTL_SECONDS:
                 return None
 
         return cache.get("data")
@@ -151,28 +134,13 @@ def get_cached_usage(allow_stale: bool = False) -> Optional[dict]:
         return None
 
 
-def save_to_cache(data: dict):
-    """
-    Atomically save usage data to cache using tmp+mv pattern.
-
-    Args:
-        data: Usage data dict to cache
-    """
+def save_to_cache(cache_file: Path, data: dict):
     try:
-        cache_data = {
-            "timestamp": time.time(),
-            "data": data
-        }
-
-        # Atomic write: tmp file + mv
-        tmp_file = CACHE_FILE.with_suffix(f".tmp.{os.getpid()}")
+        tmp_file = cache_file.with_suffix(f".tmp.{os.getpid()}")
         with open(tmp_file, 'w') as f:
-            json.dump(cache_data, f)
-
-        tmp_file.replace(CACHE_FILE)
-
+            json.dump({"timestamp": time.time(), "data": data}, f)
+        tmp_file.replace(cache_file)
     except OSError:
-        # Silently fail on cache write errors
         pass
 
 
@@ -199,32 +167,30 @@ def parse_reset_time(reset_timestamp: str) -> int:
 
 
 def main():
-    """
-    Main entry point for OAuth usage monitoring.
+    args = sys.argv[1:]
+    config_dir = os.path.expanduser("~/.claude")
+    for i, arg in enumerate(args):
+        if arg == "--config-dir" and i + 1 < len(args):
+            config_dir = os.path.realpath(args[i + 1])
 
-    Outputs:
-        On success: "SUCCESS:5h_util|5h_secs|7d_util|7d_secs"
-        On failure: exit code 1, no output
-    """
+    services = keychain_service_for(config_dir)
+    cache_file = cache_file_for(config_dir)
+
     try:
-        # Try cache first
-        usage_data = get_cached_usage()
+        usage_data = get_cached_usage(cache_file)
 
-        # If cache miss, fetch from API
         if usage_data is None:
-            access_token = get_oauth_token()
+            access_token = get_oauth_token(services)
             if access_token is None:
                 sys.exit(1)
 
             usage_data = fetch_usage_data(access_token)
             if usage_data is None:
-                # API failed — fall back to stale cache rather than failing completely
-                usage_data = get_cached_usage(allow_stale=True)
+                usage_data = get_cached_usage(cache_file, allow_stale=True)
                 if usage_data is None:
                     sys.exit(1)
             else:
-                # Cache the fresh result
-                save_to_cache(usage_data)
+                save_to_cache(cache_file, usage_data)
 
         # Parse data
         five_hour = usage_data["five_hour"]

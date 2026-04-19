@@ -9,8 +9,38 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Files and directories
+# Parse arguments
 CLAUDE_DIR="$HOME/.claude"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --config-dir)
+            CLAUDE_DIR="${2%/}"  # strip trailing slash
+            shift 2
+            ;;
+        --config-dir=*)
+            CLAUDE_DIR="${1#*=}"
+            CLAUDE_DIR="${CLAUDE_DIR%/}"
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [--config-dir <path>]"
+            echo ""
+            echo "  --config-dir <path>   Claude config directory (default: ~/.claude)"
+            echo "                        Use for non-standard installations, e.g. ~/.second_sub"
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Unknown argument: $1${NC}"
+            echo "Usage: $0 [--config-dir <path>]"
+            exit 1
+            ;;
+    esac
+done
+
+# Expand ~ in CLAUDE_DIR
+CLAUDE_DIR="${CLAUDE_DIR/#\~/$HOME}"
+
+# Files and directories
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 CONFIG_FILE="$CLAUDE_DIR/meterstick-config.json"
 USAGE_FILE="$CLAUDE_DIR/usage_tracking.json"
@@ -18,7 +48,9 @@ INSTALL_SCRIPT="$CLAUDE_DIR/meterstick-command.sh"
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║  Claude Code Meterstick Package Installer         ║${NC}"
-echo -e "${BLUE}╔════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "${BLUE}Config directory:${NC} $CLAUDE_DIR"
 echo ""
 
 # ============================================================================

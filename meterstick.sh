@@ -202,14 +202,16 @@ get_git_info() {
 
 # Fetch OAuth usage data from Python script
 fetch_oauth_usage() {
-    local python_script="$HOME/.claude/claude_usage_oauth.py"
+    local python_script="$(cd "$(dirname "$0")" && pwd)/claude_usage_oauth.py"
 
     # Check if script exists
     [ ! -f "$python_script" ] && return 1
 
     # Call Python script (has built-in 2-second timeout)
+    local config_dir
+    config_dir=$(cd "$(dirname "$python_script")" && pwd)
     local oauth_data
-    oauth_data=$(python3 "$python_script" --statusline 2>/dev/null)
+    oauth_data=$(python3 "$python_script" --statusline --config-dir "$config_dir" 2>/dev/null)
     [ $? -ne 0 ] && return 1
 
     # Parse JSON with jq

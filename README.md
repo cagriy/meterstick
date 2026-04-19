@@ -61,6 +61,16 @@ brew install git
    ```
 3. Restart Claude Code to activate the meterstick
 
+### Multiple Claude Code Configurations
+
+If you run Claude Code with a non-standard config directory (e.g. a second subscription via `--config-dir`), pass the same flag to the installer:
+
+```bash
+./install.sh --config-dir ~/.second_sub
+```
+
+This installs meterstick into `~/.second_sub/` and updates its `settings.json`. Each installation uses the correct macOS Keychain entry for its own account — credentials are never mixed between configurations.
+
 ## Configuration
 
 The installer creates two configuration files:
@@ -95,7 +105,7 @@ Meterstick displays real-time rate limit data from Anthropic's OAuth API (requir
 
 **How It Works:**
 
-1. Retrieves OAuth access token from macOS Keychain (`"Claude Code-credentials"`)
+1. Retrieves OAuth access token from macOS Keychain (service name derived from the config directory)
 2. Calls `https://api.anthropic.com/api/oauth/usage` with authentication
 3. Returns actual 5-hour and 7-day utilization percentages
 4. Caches results for 30 seconds to minimize API calls
@@ -115,7 +125,7 @@ If OAuth fails (Python not installed, credentials unavailable, network issues), 
 - Token is retrieved from secure macOS Keychain
 - OAuth token never leaves your machine except to call Anthropic's API
 - All communication uses HTTPS
-- Cache file (`/tmp/claude-oauth-usage-cache.json`) contains only public usage percentages
+- Cache file (`/tmp/claude-oauth-usage-cache-{hash}.json`) contains only public usage percentages, namespaced per config directory
 - No credentials are ever written to disk
 
 **Performance:**
