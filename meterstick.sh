@@ -127,6 +127,7 @@ render_ratelimits() {
         "$(format_percentage $pct_5h)" "$(format_duration $time_5h)"
     printf "${C_CYAN}1w${C_RESET}:%s/${C_GRAY}%s${C_RESET}" \
         "$(format_percentage $pct_weekly)" "$(format_duration $time_weekly)"
+    [ "$ratelimits_source" = "oauth" ] && printf " ${C_DARK_GRAY}*${C_RESET}"
 }
 
 # Parse model display name (e.g., "claude-opus-4-6" -> "Opus 4.6")
@@ -246,7 +247,11 @@ data=$(echo "$input" | jq -r '
         session_id: .session_id,
         ctx_pct: .context_window.used_percentage,
         total_in: .context_window.total_input_tokens,
-        total_out: .context_window.total_output_tokens
+        total_out: .context_window.total_output_tokens,
+        rl_5h_pct: .rate_limits.five_hour.used_percentage,
+        rl_5h_resets_at: .rate_limits.five_hour.resets_at,
+        rl_7d_pct: .rate_limits.seven_day.used_percentage,
+        rl_7d_resets_at: .rate_limits.seven_day.resets_at
     } | @json
 ')
 
@@ -257,6 +262,10 @@ session_id=$(echo "$data" | jq -r '.session_id')
 ctx_pct=$(echo "$data" | jq -r '.ctx_pct')
 total_in=$(echo "$data" | jq -r '.total_in')
 total_out=$(echo "$data" | jq -r '.total_out')
+rl_5h_pct=$(echo "$data" | jq -r '.rl_5h_pct')
+rl_5h_resets_at=$(echo "$data" | jq -r '.rl_5h_resets_at')
+rl_7d_pct=$(echo "$data" | jq -r '.rl_7d_pct')
+rl_7d_resets_at=$(echo "$data" | jq -r '.rl_7d_resets_at')
 
 # Parse model name
 if [ "$model_display" != "null" ] && [ -n "$model_display" ]; then
@@ -315,20 +324,42 @@ if [ "$total_in" != "null" ] && [ "$total_out" != "null" ] && [ -n "$total_in" ]
 fi
 
 # ============================================================================
-# RATE LIMIT CALCULATION (OAuth only)
+# RATE LIMIT CALCULATION (native stdin → OAuth fallback)
 # ============================================================================
 
-# Fetch OAuth usage data
-oauth_result=$(fetch_oauth_usage)
-oauth_available=false
+ratelimits_available=false
 
-if [ $? -eq 0 ]; then
-    # Use OAuth data (real utilization from Anthropic)
-    pct_5h=$(echo "$oauth_result" | cut -d'|' -f1)
-    time_5h=$(echo "$oauth_result" | cut -d'|' -f2)
-    pct_weekly=$(echo "$oauth_result" | cut -d'|' -f3)
-    time_weekly=$(echo "$oauth_result" | cut -d'|' -f4)
-    oauth_available=true
+if [ "$rl_5h_pct" != "null" ] && [ -n "$rl_5h_pct" ] && \
+   [ "$rl_7d_pct" != "null" ] && [ -n "$rl_7d_pct" ]; then
+    # Native rate limit data from Claude Code stdin
+    pct_5h="$rl_5h_pct"
+    pct_weekly="$rl_7d_pct"
+    now_epoch=$(date +%s)
+    if [ "$rl_5h_resets_at" != "null" ] && [ -n "$rl_5h_resets_at" ]; then
+        time_5h=$((rl_5h_resets_at - now_epoch))
+        [ "$time_5h" -lt 0 ] && time_5h=0
+    else
+        time_5h=0
+    fi
+    if [ "$rl_7d_resets_at" != "null" ] && [ -n "$rl_7d_resets_at" ]; then
+        time_weekly=$((rl_7d_resets_at - now_epoch))
+        [ "$time_weekly" -lt 0 ] && time_weekly=0
+    else
+        time_weekly=0
+    fi
+    ratelimits_available=true
+    ratelimits_source="native"
+else
+    # Fallback: OAuth via Python script
+    oauth_result=$(fetch_oauth_usage)
+    if [ $? -eq 0 ]; then
+        pct_5h=$(echo "$oauth_result" | cut -d'|' -f1)
+        time_5h=$(echo "$oauth_result" | cut -d'|' -f2)
+        pct_weekly=$(echo "$oauth_result" | cut -d'|' -f3)
+        time_weekly=$(echo "$oauth_result" | cut -d'|' -f4)
+        ratelimits_available=true
+        ratelimits_source="oauth"
+    fi
 fi
 
 # ============================================================================
@@ -369,7 +400,7 @@ for section in $sections; do
         directory)  render_directory ;;
         git)        render_git ;;
         context)    render_context ;;
-        ratelimits) [ "$oauth_available" = true ] && render_ratelimits ;;
+        ratelimits) [ "$ratelimits_available" = true ] && render_ratelimits ;;
         *)          ;;  # silently ignore unknown section names
     esac
 done
