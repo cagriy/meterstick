@@ -15,7 +15,7 @@ CACHE_DIR="/tmp/claude-meterstick-cache"
 C_RESET=$'\033[0m'
 C_BOLD_ORANGE=$'\033[1;38;5;208m'
 C_WHITE=$'\033[0;37m'
-C_GREEN=$'\033[32m'
+C_GREEN=$'\033[38;5;76m'
 C_RED=$'\033[31m'
 C_CYAN=$'\033[36m'
 C_LIGHT_GRAY=$'\033[38;5;250m'
@@ -23,6 +23,7 @@ C_GRAY=$'\033[38;5;245m'
 C_DARK_GRAY=$'\033[38;5;240m'
 C_YELLOW=$'\033[38;5;178m'
 C_BOLD_RED=$'\033[1;38;5;131m'
+C_BLUE=$'\033[38;5;39m'
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -91,9 +92,9 @@ format_duration() {
 # RENDER FUNCTIONS (for configurable section order)
 # ============================================================================
 
-# Render model name (bold orange)
+# Render model name (color set by C_MODEL, resolved from config)
 render_model() {
-    printf "${C_BOLD_ORANGE}%s${C_RESET}" "$model_name"
+    printf "${C_MODEL}%s${C_RESET}" "$model_name"
 }
 
 # Render directory path (white)
@@ -385,6 +386,22 @@ sections="${configured_sections:-$DEFAULT_SECTIONS}"
 if [ -z "$sections" ]; then
     sections="$DEFAULT_SECTIONS"
 fi
+
+# Resolve model color from config (defaults to bold orange)
+model_color_name=$([ -f "$CONFIG_FILE" ] && jq -r '.model_color // empty' "$CONFIG_FILE" 2>/dev/null || echo "")
+case "$model_color_name" in
+    white)      C_MODEL=$C_WHITE ;;
+    green)      C_MODEL=$C_GREEN ;;
+    red)        C_MODEL=$C_RED ;;
+    cyan)       C_MODEL=$C_CYAN ;;
+    light_gray) C_MODEL=$C_LIGHT_GRAY ;;
+    gray)       C_MODEL=$C_GRAY ;;
+    dark_gray)  C_MODEL=$C_DARK_GRAY ;;
+    yellow)     C_MODEL=$C_YELLOW ;;
+    bold_red)   C_MODEL=$C_BOLD_RED ;;
+    blue)       C_MODEL=$C_BLUE ;;
+    *)          C_MODEL=$C_BOLD_ORANGE ;;
+esac
 
 # ============================================================================
 # OUTPUT

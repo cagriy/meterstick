@@ -1,3 +1,4 @@
 {
-  "sections": ["model", "directory", "git", "context", "ratelimits"]
+  "sections": ["model", "directory", "git", "context", "ratelimits"],
+  "model_color": "orange"
 }

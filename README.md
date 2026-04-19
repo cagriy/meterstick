@@ -61,6 +61,21 @@ brew install git
    ```
 3. Restart Claude Code to activate the meterstick
 
+### Options
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--config-dir <path>` | Claude config directory | `~/.claude` |
+| `--color <name>` | Model name color | `orange` |
+
+**Available colors:** `orange` `white` `green` `red` `cyan` `blue` `light_gray` `gray` `dark_gray` `yellow` `bold_red`
+
+Example — install for a second account with a custom color:
+
+```bash
+./install.sh --config-dir ~/.second_sub --color blue
+```
+
 ### Multiple Claude Code Configurations
 
 If you run Claude Code with a non-standard config directory (e.g. a second subscription via `--config-dir`), pass the same flag to the installer:
@@ -86,6 +101,7 @@ The installer creates two configuration files:
 **Configuration Options:**
 
 - **`sections`**: Array controlling section order and visibility
+- **`model_color`**: Color of the model name. Valid values: `orange` `white` `green` `red` `cyan` `blue` `light_gray` `gray` `dark_gray` `yellow` `bold_red` (default: `orange`)
 
 ## How It Works
 

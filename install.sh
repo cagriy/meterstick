@@ -22,16 +22,26 @@ while [[ $# -gt 0 ]]; do
             CLAUDE_DIR="${CLAUDE_DIR%/}"
             shift
             ;;
+        --color)
+            MODEL_COLOR="${2}"
+            shift 2
+            ;;
+        --color=*)
+            MODEL_COLOR="${1#*=}"
+            shift
+            ;;
         -h|--help)
-            echo "Usage: $0 [--config-dir <path>]"
+            echo "Usage: $0 [--config-dir <path>] [--color <name>]"
             echo ""
             echo "  --config-dir <path>   Claude config directory (default: ~/.claude)"
             echo "                        Use for non-standard installations, e.g. ~/.second_sub"
+            echo "  --color <name>        Model name color (default: orange)"
+            echo "                        Valid: orange white green red cyan blue light_gray gray dark_gray yellow bold_red"
             exit 0
             ;;
         *)
             echo -e "${RED}Unknown argument: $1${NC}"
-            echo "Usage: $0 [--config-dir <path>]"
+            echo "Usage: $0 [--config-dir <path>] [--color <name>]"
             exit 1
             ;;
     esac
@@ -39,6 +49,21 @@ done
 
 # Expand ~ in CLAUDE_DIR
 CLAUDE_DIR="${CLAUDE_DIR/#\~/$HOME}"
+
+# Validate color if provided
+MODEL_COLOR="${MODEL_COLOR:-}"
+VALID_COLORS="orange white green red cyan blue light_gray gray dark_gray yellow bold_red"
+if [ -n "$MODEL_COLOR" ]; then
+    valid=false
+    for c in $VALID_COLORS; do
+        [ "$c" = "$MODEL_COLOR" ] && valid=true && break
+    done
+    if [ "$valid" = false ]; then
+        echo -e "${RED}Unknown color: $MODEL_COLOR${NC}"
+        echo "Valid colors: $VALID_COLORS"
+        exit 1
+    fi
+fi
 
 # Files and directories
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
@@ -142,9 +167,13 @@ echo -e "${YELLOW}[3/8]${NC} Creating configuration file..."
 
 mkdir -p "$CLAUDE_DIR"
 
+color_line=""
+[ -n "$MODEL_COLOR" ] && color_line=",
+  \"model_color\": \"$MODEL_COLOR\""
+
 cat > "$CONFIG_FILE" <<EOF
 {
-  "sections": $sections_array
+  "sections": $sections_array$color_line
 }
 EOF
 
@@ -166,6 +195,17 @@ if [ ! -f "$SCRIPT_DIR/meterstick.sh" ]; then
 fi
 
 cp "$SCRIPT_DIR/meterstick.sh" "$INSTALL_SCRIPT"
+
+# Patch config paths if using a non-default config directory
+if [ "$CLAUDE_DIR" != "$HOME/.claude" ]; then
+    sed -i '' \
+        "s|CONFIG_FILE=\"\$HOME/.claude/meterstick-config.json\"|CONFIG_FILE=\"$CONFIG_FILE\"|" \
+        "$INSTALL_SCRIPT"
+    sed -i '' \
+        "s|USAGE_FILE=\"\$HOME/.claude/usage_tracking.json\"|USAGE_FILE=\"$USAGE_FILE\"|" \
+        "$INSTALL_SCRIPT"
+fi
+
 chmod +x "$INSTALL_SCRIPT"
 
 echo -e "${GREEN}✓ Installed to $INSTALL_SCRIPT${NC}"
