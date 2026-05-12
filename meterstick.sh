@@ -7,8 +7,9 @@
 # CONFIGURATION
 # ============================================================================
 
-CONFIG_FILE="$HOME/.claude/meterstick-config.json"
-USAGE_FILE="$HOME/.claude/usage_tracking.json"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CONFIG_FILE="$SCRIPT_DIR/meterstick-config.json"
+USAGE_FILE="$SCRIPT_DIR/usage_tracking.json"
 CACHE_DIR="/tmp/claude-meterstick-cache"
 
 # Color definitions (using $'...' for proper escape sequence interpretation)
@@ -95,6 +96,7 @@ format_duration() {
 # Render model name (color set by C_MODEL, resolved from config)
 render_model() {
     printf "${C_MODEL}%s${C_RESET}" "$model_name"
+    [ -n "$effort_short" ] && printf " ${C_GRAY}%s${C_RESET}" "$effort_short"
 }
 
 # Render directory path (white)
@@ -246,6 +248,7 @@ data=$(echo "$input" | jq -r '
     {
         model_id: .model.id,
         model_display: .model.display_name,
+        effort_level: .effort.level,
         cwd: .workspace.current_dir,
         session_id: .session_id,
         ctx_pct: .context_window.used_percentage,
@@ -260,6 +263,7 @@ data=$(echo "$input" | jq -r '
 
 model_id=$(echo "$data" | jq -r '.model_id')
 model_display=$(echo "$data" | jq -r '.model_display')
+effort_level=$(echo "$data" | jq -r '.effort_level')
 cwd=$(echo "$data" | jq -r '.cwd')
 session_id=$(echo "$data" | jq -r '.session_id')
 ctx_pct=$(echo "$data" | jq -r '.ctx_pct')
@@ -279,6 +283,16 @@ else
     # Model info not yet available (startup or mode switch)
     model_name="---"
 fi
+
+# Map effort level to 2-letter designator (empty when unsupported by model)
+case "$effort_level" in
+    low)    effort_short="lo" ;;
+    medium) effort_short="md" ;;
+    high)   effort_short="hi" ;;
+    xhigh)  effort_short="xh" ;;
+    max)    effort_short="mx" ;;
+    *)      effort_short="" ;;
+esac
 
 # Format directory
 dir_display=$(format_directory "$cwd")
